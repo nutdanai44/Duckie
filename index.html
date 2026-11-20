@@ -11,6 +11,7 @@ nav{gap:8px}button{border:2px solid #40281e;box-shadow:0 3px #40281e;background:
 .flavors{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.flavors button{padding:8px 4px}.flavors span{display:block;font-size:24px}.flavors button:nth-child(1){background:#ffd5df}.flavors button:nth-child(2){background:#ffe6a7}.flavors button:nth-child(3){background:#cde5c6}.feedback{min-height:25px;margin:15px 0 0;font-weight:700}.market-footer{padding-top:16px;margin-top:15px;border-top:1px dashed #a58a71}.record{margin:0;color:#674f40}.story-pop{animation:pop .45s ease-out}
 @keyframes shake{0%{transform:rotate(-6deg)}25%{transform:rotate(6deg) scale(1.07)}50%{transform:rotate(-9deg) scale(.96)}75%{transform:rotate(8deg) scale(1.11)}100%{transform:rotate(-4deg) scale(.92);opacity:.3}}
 @media(max-width:620px){.stage{border-left:0;border-bottom:2px solid #40281e}.counter{padding:10px;grid-template-columns:minmax(75px,110px) 1fr}.bubble{padding:8px}.order span{padding:3px 5px}}
+ .shift-stats,.stock,.checkout{padding:12px;border:2px solid #40281e;border-radius:14px;margin:12px 0;background:#fff1c6}.stock{justify-content:flex-start;gap:25px;background:#d9ecce}.rush-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.customer{padding:9px;display:flex;flex-direction:column;gap:5px;min-width:0}.customer .art{max-width:150px;margin:auto}.customer button{padding:7px 3px;margin-top:auto}.customer .urgent{color:#9c3225;font-weight:bold}.recipe{font-size:clamp(14px,3vw,24px);white-space:nowrap}.checkout h2{margin-top:0}@media(max-width:480px){.market-content{padding:12px}.rush-grid{gap:6px}.customer b,.customer button{font-size:13px}.customer{padding:6px}.shift-stats{gap:6px;font-size:14px}}
 </style>
 <main><header><b class="brand">🦆 ร้านซองจิ๋ว</b><span class="wallet" id="wallet"></span></header><nav id="nav" aria-label="เมนูเกม"></nav><section id="screen"></section><p id="notice" role="status"></p></main>
 <script>
@@ -22,32 +23,99 @@ let state={coins:90,packs:0,pity:0,stamps:0,ducks:[],items:[],stories:[],slots:[
 try{const saved=localStorage.getItem(key);if(saved)state={...state,...JSON.parse(saved)}}catch{}
 let tab=3,album=0,reveal=null,dragStart,opening=false;
 const flavors=[['สตรอว์เบอร์รี','🍓'],['วานิลลา','🍦'],['ชาเขียว','🍵']];
-const tickets=[[0,1],[2,0],[1,2,1],[0,2,0],[2,1,0],[1,0,2]];
-let scoopStep=0, iceFeedback='';
-function scoop(flavor){
- const served=state.served??0;
- const ticket=tickets[served%tickets.length];
- if(flavor!==ticket[scoopStep]){
-  scoopStep=0;
-  iceFeedback='ผิดรส ลองจัดถ้วยนี้ใหม่อีกครั้ง';
- }else if(++scoopStep===ticket.length){
-  scoopStep=0;
-  state.served=served+1;
-  state.coins+=30;
-  save();
-  iceFeedback='เสิร์ฟสำเร็จ! รับ 30 เหรียญ เปิดได้ 1 ซอง';
+const customers=[
+ {duck:0, recipe:[0,0], pay:18, patience:2},
+ {duck:8, recipe:[1,2], pay:22, patience:3},
+ {duck:2, recipe:[0,1,2], pay:38, patience:2},
+ {duck:7, recipe:[2,2], pay:21, patience:3},
+ {duck:9, recipe:[0,2,2], pay:45, patience:2},
+ {duck:6, recipe:[1,1], pay:18, patience:3},
+ {duck:3, recipe:[0,1], pay:24, patience:2}
+];
+const helpers=[
+ [5,'เป็ดรถเข็นไอติม','เติมสต๊อกได้รสละ 3 ลูก'],
+ [0,'เป็ดถุงแกง','ลูกค้าใหม่รอเพิ่ม 1 เทิร์น'],
+ [9,'เป็ดนักชิม','ได้เพิ่ม 8 เหรียญเมื่อเสิร์ฟสูตร 3 ลูก']
+];
+let shift=null, marketFeedback='';
+function createShift(helper=-1,boost=false){
+ const run={helper,stock:boost?[5,4,4]:[3,3,3],turn:0,limit:6,pot:0,combo:0,served:0,queue:[],cursor:0,overtime:false};
+ for(let i=0;i<3;i++)addCustomer(run);
+ return run;
+}
+function addCustomer(run){
+ const order=customers[(run.cursor+++(state.shifts??0))%customers.length];
+ run.queue.push({...order,wait:order.patience+Number(run.helper===0)});
+}
+function canServe(run,order){
+ const need=[0,0,0];
+ for(const flavor of order.recipe)need[flavor]++;
+ return need.every((count,i)=>count<=run.stock[i]);
+}
+function takeTurn(action,index){
+ const run=shift;
+ if(!run||run.turn===run.limit)return;
+ let removed=[];
+ if(action==='serve'){
+  const order=run.queue[index];
+  if(!order||!canServe(run,order))return;
+  run.queue.splice(index,1);
+  for(const flavor of order.recipe)run.stock[flavor]--;
+  run.combo++;
+  run.served++;
+  const tip=(run.combo-1)*5+((run.helper===9&&order.recipe.length===3)?8:0);
+  run.pot+=order.pay+tip;
+  marketFeedback='เสิร์ฟเป็ด'+ducks[order.duck]+' +'+(order.pay+tip)+' เหรียญ'+(tip?' รวมทิป '+tip:'');
  }else{
-  iceFeedback='ลงถ้วยแล้ว เลือกรสถัดไปได้เลย';
+  run.combo=0;
+  run.stock=run.stock.map(count=>Math.min(7,count+(run.helper===5?3:2)));
+  marketFeedback='เติมไอติมแล้ว คอมโบเริ่มใหม่';
  }
+ run.turn++;
+ for(const order of run.queue)order.wait--;
+ removed=run.queue.filter(order=>order.wait===0);
+ run.queue=run.queue.filter(order=>order.wait>0);
+ while(run.queue.length<3)addCustomer(run);
+ if(removed.length)marketFeedback+=' · ลูกค้ากลับ '+removed.length+' ตัว';
  render();
- byId('screen').querySelector('[data-flavor="'+flavor+'"]')?.focus();
+}
+function settleShift(){
+ if(!shift||shift.turn!==shift.limit)return;
+ const bonus=shift.overtime&&shift.served>=shift.target?65:0;
+ const payout=shift.overtime&&!bonus?Math.floor(shift.pot/2):shift.pot+bonus;
+ state.coins+=payout;
+ state.served=(state.served??0)+shift.served;
+ state.shifts=(state.shifts??0)+1;
+ state.best=Math.max(state.best??0,payout);
+ shift=null;
+ marketFeedback='ปิดกะ รับ '+payout+' เหรียญ'+(bonus?' รวมโบนัส 65': '');
+ save();render();
+}
+function extendShift(){
+ if(!shift||shift.overtime||shift.turn!==shift.limit)return;
+ shift.overtime=true;
+ shift.target=shift.served+2;
+ shift.limit+=3;
+ marketFeedback='โอที! เสิร์ฟเพิ่ม 2 ถ้วยใน 3 เทิร์น';
+ render();
 }
 function renderMarket(screen){
- const served=state.served??0;
- const ticket=tickets[served%tickets.length];
- const customer=[0,8,2,6,7,9][served%6];
- const order=ticket.map((flavor,index)=>'<span class="'+(index<scoopStep?'done':index===scoopStep?'next':'')+'">'+flavors[flavor][1]+' '+flavors[flavor][0]+(index<scoopStep?' ✓':'')+'</span>').join('');
- screen.innerHTML='<div class="panel market"><div class="awning" aria-hidden="true"></div><div class="market-content"><h1>ร้านไอติมตลาดเช้า</h1><p>แตะรสไอติมตามออเดอร์จากซ้ายไปขวา เสิร์ฟหนึ่งถ้วยได้ 30 เหรียญ</p><div class="counter">'+art(customer)+'<div class="bubble"><p><b>เป็ด'+ducks[customer]+'</b> ขอไอติม '+ticket.length+' ลูก</p><div class="order" aria-label="ออเดอร์">'+order+'</div></div></div><div class="flavors">'+flavors.map(([name,icon],i)=>'<button data-flavor="'+i+'"><span aria-hidden="true">'+icon+'</span>'+name+'</button>').join('')+'</div><p class="feedback" role="status">'+iceFeedback+'</p><div class="line market-footer"><p class="record">เสิร์ฟแล้ว '+served+' ถ้วย</p><button class="action" data-tab="0">ไปเปิดซอง</button></div></div></div>';
+ const run=shift;
+ const available=helpers.filter(([id])=>state.ducks.includes(id));
+ const intro='<div class="line"><h1>ไอติมตะลุยตลาด</h1><span class="tag">สถิติ '+(state.best??0)+' เหรียญ/กะ</span></div>';
+ const setup='<p>มี 6 เทิร์น เลือกเสิร์ฟลูกค้าหรือเติมไอติม เสิร์ฟติดกันได้ทิปเพิ่ม</p><div class="fields"><label>เป็ดช่วยร้าน<select id="helper"><option value="-1">เปิดร้านคนเดียว</option>'+available.map(([id,name,perk])=>'<option value="'+id+'">'+name+' · '+perk+'</option>').join('')+'</select></label></div>'+(state.items.includes(0)?'<p>🍦 รถเข็นไอติมเพิ่มสต๊อกเริ่มต้นทุกกะ</p>':'<p>เปิดซองเพื่อหาเป็ดช่วยร้านและรถเข็นเพิ่มสต๊อก</p>')+'<button class="action" id="startShift">เปิดร้าน</button>';
+ let body=setup;
+ if(run){
+  const done=run.turn===run.limit;
+  const cards=run.queue.map((order,i)=>'<article class="card customer">'+art(order.duck)+'<b>เป็ด'+ducks[order.duck]+'</b><small class="'+(order.wait===1?'urgent':'')+'">รออีก '+order.wait+' เทิร์น</small><div class="recipe" aria-label="'+order.recipe.map(f=>flavors[f][0]).join(', ')+'">'+order.recipe.map(f=>flavors[f][1]).join(' ')+'</div><button data-serve="'+i+'" '+(done||!canServe(run,order)?'disabled':'')+'>'+(canServe(run,order)?'เสิร์ฟ · '+order.pay:'ของไม่พอ')+'</button></article>').join('');
+  const result='<div class="checkout"><h2>'+(run.overtime?'จบโอที':'หมดกะ')+'</h2><p>'+ (run.overtime?(run.served>=run.target?'ทำเป้าสำเร็จ รับโบนัส 65 เหรียญ':'พลาดเป้า รับครึ่งหนึ่งของเงินในกะ'):'เล่นเพิ่ม 3 เทิร์น เสิร์ฟอีก 2 ถ้วย รับโบนัส 65 เหรียญ พลาดเป้าจะได้เงินกะนี้ครึ่งเดียว')+'</p><button class="action" id="settle">ปิดกะ รับ '+(run.overtime?(run.served>=run.target?run.pot+65:Math.floor(run.pot/2)):run.pot)+' เหรียญ</button> '+(!run.overtime?'<button id="extend">เสี่ยงเปิดโอที</button>':'')+'</div>';
+  body='<div class="line shift-stats"><span>เทิร์นเหลือ <b>'+(run.limit-run.turn)+'</b></span><span>เงินในกะ <b>'+run.pot+'</b></span><span>คอมโบ <b>×'+run.combo+'</b></span>'+(run.overtime?'<span>เป้าโอที <b>'+Math.min(2,2-(run.target-run.served))+'/2</b></span>':'')+'</div><div class="line stock">'+flavors.map(([name,icon],i)=>'<span title="'+name+'">'+icon+' <b>'+run.stock[i]+'</b></span>').join('')+'</div>'+(done?result:'<div class="rush-grid">'+cards+'</div><p><button id="restock">เติมไอติม · ใช้ 1 เทิร์น</button></p>');
+ }
+ screen.innerHTML='<div class="panel market"><div class="awning" aria-hidden="true"></div><div class="market-content">'+intro+body+'<p class="feedback" role="status">'+marketFeedback+'</p><div class="line market-footer"><p class="record">เสิร์ฟทั้งหมด '+(state.served??0)+' ถ้วย</p><button data-tab="0">ไปเปิดซอง</button></div></div></div>';
+ if(byId('startShift'))byId('startShift').onclick=()=>{shift=createShift(Number(byId('helper').value),state.items.includes(0));marketFeedback='';render()};
+ if(byId('restock'))byId('restock').onclick=()=>takeTurn('restock');
+ if(byId('settle'))byId('settle').onclick=settleShift;
+ if(byId('extend'))byId('extend').onclick=extendShift;
 }
 function animateDraw(){
  if(opening||state.coins<30)return;
@@ -116,7 +184,7 @@ function render(){
 }
 document.querySelector('main').addEventListener('click',e=>{
  const button=e.target.closest('button');if(!button)return;
- if(button.dataset.flavor!==undefined){scoop(Number(button.dataset.flavor));return}
+ if(button.dataset.serve!==undefined){takeTurn('serve',Number(button.dataset.serve));return}
  if(button.dataset.tab!==undefined){tab=Number(button.dataset.tab);byId('notice').textContent='';render();return}
  if(button.dataset.album!==undefined){album=Number(button.dataset.album);render();return}
  if(button.dataset.exchange!==undefined){
